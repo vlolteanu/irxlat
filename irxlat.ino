@@ -4,6 +4,8 @@
 #include "PinDefinitionsAndMore.h"
 #include <IRremote.hpp>
 
+#define VERSION "0.1"
+
 struct NECCode
 {
 	uint16_t address;
@@ -18,17 +20,24 @@ struct NECCode
 	{
 		return !(a == b);
 	}
+
+	void print()
+	{
+		Serial.print("Protocol=NEC Address=0x");
+		Serial.print(address, HEX);
+		Serial.print(" Command=0x");
+		Serial.print(command, HEX);
+	}
 };
 
-struct XlatEntry
+struct NECXlatEntry
 {
 	NECCode from;
 	NECCode to;
 };
 
-constexpr XlatEntry XLAT_TABLE[] = {
-	{ { 0xE918, 0x5E }, { 0xE78, 0x12 } }, /* vol up */
-	{ { 0xE918, 0x5F }, { 0xE78, 0x11 } }, /* vol down */
+constexpr NECXlatEntry NEC_XLAT_TABLE[] = {
+#include "table.h"
 };
 
 IRrecv irRecv(IR_RECEIVE_PIN);
@@ -40,9 +49,27 @@ void setup()
 
 	irRecv.begin(IR_RECEIVE_PIN, false, 0);
 
-	Serial.print("Supported protocols:");
+	Serial.println();
+	Serial.print("IRXLAT firmware version ");
+	Serial.println(VERSION);
+
+	Serial.print("RX pin: ");
+	Serial.println(IR_RECEIVE_PIN);
+	Serial.print("TX pin: ");
+	Serial.println(IR_SEND_PIN);
+
+	Serial.print("Supported protocols: ");
 	printActiveIRProtocols(&Serial);
 	Serial.println();
+
+	Serial.println("NEC translation table:");
+	for (auto entry : NEC_XLAT_TABLE)
+	{
+		entry.from.print();
+		Serial.print(" -> ");
+		entry.to.print();
+		Serial.println();
+	}
 }
 
 void loop()
@@ -52,21 +79,20 @@ void loop()
 
 	NECCode code { irRecv.decodedIRData.address, irRecv.decodedIRData.command };
 
+	Serial.print("Received: ");
 	irRecv.printIRResultShort(&Serial);
-	irRecv.resume();
-
-	for (auto entry : XLAT_TABLE)
+	
+	for (auto entry : NEC_XLAT_TABLE)
 	{
 		if ( code != entry.from)
 			continue;
 
-		Serial.print("Translating to NEC address ");
-		Serial.print(entry.to.address);
-		Serial.print(" command ");
-		Serial.print(entry.to.command);
+		Serial.print("Translating: ");
+		entry.to.print();
 		Serial.println();
 
 		irSend.sendNEC(entry.to.address, entry.to.command, 0);
 		break;
 	}
+	irRecv.resume();
 }

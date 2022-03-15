@@ -4,39 +4,55 @@
 #include "PinDefinitionsAndMore.h"
 #include <IRremote.hpp>
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
-struct NECCode
+struct Code
 {
+	decode_type_t proto;
 	uint16_t address;
 	uint16_t command;
 
-	friend bool operator ==(const NECCode &a, const NECCode &b)
+	friend bool operator ==(const Code &a, const Code &b)
 	{
-		return a.address == b.address && a.command == b.command;
+		return a.proto == b.proto && a.address == b.address && a.command == b.command;
 	}
 
-	friend bool operator !=(const NECCode &a, const NECCode &b)
+	friend bool operator !=(const Code &a, const Code &b)
 	{
 		return !(a == b);
 	}
 
+	void send(IRsend *sender)
+	{
+		switch (proto)
+		{
+		case NEC:
+			sender->sendNEC(address, command, 0);
+			break;
+
+		default:
+			Serial.println("Unsupported protocol");
+		}
+	}
+
 	void print()
 	{
-		Serial.print("Protocol=NEC Address=0x");
+		Serial.print("Protocol=");
+		Serial.print(getProtocolString(proto));
+		Serial.print(" Address=0x");
 		Serial.print(address, HEX);
 		Serial.print(" Command=0x");
 		Serial.print(command, HEX);
 	}
 };
 
-struct NECXlatEntry
+struct XlatEntry
 {
-	NECCode from;
-	NECCode to;
+	Code from;
+	Code to;
 };
 
-constexpr NECXlatEntry NEC_XLAT_TABLE[] = {
+constexpr XlatEntry XLAT_TABLE[] = {
 #include "table.h"
 };
 
@@ -63,7 +79,7 @@ void setup()
 	Serial.println();
 
 	Serial.println("NEC translation table:");
-	for (auto entry : NEC_XLAT_TABLE)
+	for (auto entry : XLAT_TABLE)
 	{
 		entry.from.print();
 		Serial.print(" -> ");
@@ -77,22 +93,24 @@ void loop()
 	if (!irRecv.decode())
 		return;
 
-	NECCode code { irRecv.decodedIRData.address, irRecv.decodedIRData.command };
+	const IRData &data = irRecv.decodedIRData;
+	Code code { data.protocol, data.address, data.command };
 
 	Serial.print("Received: ");
 	irRecv.printIRResultShort(&Serial);
 	
-	for (auto entry : NEC_XLAT_TABLE)
+	for (auto entry : XLAT_TABLE)
 	{
-		if ( code != entry.from)
+		if (code != entry.from)
 			continue;
 
 		Serial.print("Translating: ");
 		entry.to.print();
 		Serial.println();
 
-		irSend.sendNEC(entry.to.address, entry.to.command, 0);
+		entry.to.send(&irSend);
 		break;
 	}
+
 	irRecv.resume();
 }
